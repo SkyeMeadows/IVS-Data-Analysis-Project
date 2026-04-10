@@ -28,16 +28,16 @@ from influxdb import DataFrameClient
 # ---------------------------------------------------------------------------
 INFLUX_HOST     = "localhost"
 INFLUX_PORT     = 8086
-INFLUX_DATABASE = "mydb"          # name of your InfluxDB database
-INFLUX_USER     = ""              # leave empty if auth is disabled
-INFLUX_PASSWORD = ""
+INFLUX_DATABASE = "IronVale"          # name of your InfluxDB database
+INFLUX_USER     = "admin"              # leave empty if auth is disabled
+INFLUX_PASSWORD = "IronVale"
 INFLUX_SSL      = False           # set True if your server uses HTTPS
 
 SQLITE_PATH     = "influx_export.db"   # output file (created if missing)
 
 # How far back to extract. Set START_DATE to None to extract everything.
 # If your data goes back years, narrowing this saves a lot of time.
-START_DATE = None                 # e.g. datetime(2023, 1, 1, tzinfo=timezone.utc)
+START_DATE = datetime(2026, 1, 1, tzinfo=timezone.utc)                 # e.g. datetime(2023, 1, 1, tzinfo=timezone.utc)
 END_DATE   = datetime.now(timezone.utc)
 
 # Weekly chunks — safe for ~1 GB datasets. Reduce to timedelta(days=1) if

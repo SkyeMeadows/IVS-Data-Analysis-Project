@@ -28,16 +28,16 @@ from influxdb import DataFrameClient
 # ---------------------------------------------------------------------------
 INFLUX_HOST     = "localhost"
 INFLUX_PORT     = 8086
-INFLUX_DATABASE = "IronVale"          # name of your InfluxDB database
-INFLUX_USER     = "admin"              # leave empty if auth is disabled
-INFLUX_PASSWORD = "IronVale"
+INFLUX_DATABASE = "mydb"          # name of your InfluxDB database
+INFLUX_USER     = ""              # leave empty if auth is disabled
+INFLUX_PASSWORD = ""
 INFLUX_SSL      = False           # set True if your server uses HTTPS
 
 SQLITE_PATH     = "influx_export.db"   # output file (created if missing)
 
 # How far back to extract. Set START_DATE to None to extract everything.
 # If your data goes back years, narrowing this saves a lot of time.
-START_DATE = datetime(2026, 1, 1, tzinfo=timezone.utc)                 # e.g. datetime(2023, 1, 1, tzinfo=timezone.utc)
+START_DATE = None                 # e.g. datetime(2023, 1, 1, tzinfo=timezone.utc)
 END_DATE   = datetime.now(timezone.utc)
 
 # Weekly chunks — safe for ~1 GB datasets. Reduce to timedelta(days=1) if
@@ -64,8 +64,6 @@ def get_client() -> DataFrameClient:
         database=INFLUX_DATABASE,
         ssl=INFLUX_SSL,
         verify_ssl=INFLUX_SSL,
-        epoch="ns",   # return timestamps as integer nanoseconds — avoids
-                      # pandas strptime failures on mixed-precision strings
     )
 
 
@@ -81,13 +79,19 @@ def get_time_range(client: DataFrameClient, measurement: str):
     """Return the actual (first, last) timestamps stored for a measurement."""
     q_first = f'SELECT * FROM "{measurement}" ORDER BY time ASC  LIMIT 1'
     q_last  = f'SELECT * FROM "{measurement}" ORDER BY time DESC LIMIT 1'
-    r_first = client.query(q_first)
-    r_last  = client.query(q_last)
+    r_first = client.query(q_first, epoch="ns")
+    r_last  = client.query(q_last, epoch="ns")
     if not r_first or not r_last:
         return None, None
     df_first = list(r_first.values())[0]
     df_last  = list(r_last.values())[0]
-    return df_first.index[0], df_last.index[0]
+    # With epoch="ns" the index is int64 nanoseconds; convert to UTC datetimes.
+    def idx_to_dt(idx):
+        val = idx[0]
+        if isinstance(val, (int, float)):
+            return pd.Timestamp(int(val), unit="ns", tz="UTC")
+        return pd.Timestamp(val).tz_localize("UTC") if val.tzinfo is None else pd.Timestamp(val).tz_convert("UTC")
+    return idx_to_dt(df_first.index), idx_to_dt(df_last.index)
 
 
 def sanitize(name: str) -> str:
@@ -204,7 +208,9 @@ def extract_measurement(
         )
 
         try:
-            result = client.query(query)
+            # epoch="ns" makes InfluxDB return timestamps as integer nanoseconds,
+            # avoiding pandas strptime failures on mixed-precision ISO strings.
+            result = client.query(query, epoch="ns")
         except Exception as exc:
             log.warning("    Query failed for window %s–%s: %s", t0, t1, exc)
             current = window_end

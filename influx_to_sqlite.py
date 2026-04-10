@@ -64,6 +64,8 @@ def get_client() -> DataFrameClient:
         database=INFLUX_DATABASE,
         ssl=INFLUX_SSL,
         verify_ssl=INFLUX_SSL,
+        epoch="ns",   # return timestamps as integer nanoseconds — avoids
+                      # pandas strptime failures on mixed-precision strings
     )
 
 
@@ -134,10 +136,15 @@ def insert_chunk(conn: sqlite3.Connection, table: str, df: pd.DataFrame):
     if df.empty:
         return
 
-    # Reset index so the DatetimeIndex becomes a plain column
+    # Reset index so the timestamp becomes a plain column.
+    # With epoch="ns" the index arrives as int64 nanoseconds — convert
+    # manually so we're never at the mercy of pandas strptime format guessing.
     df = df.copy()
-    df.index = df.index.tz_convert("UTC") if df.index.tzinfo else df.index
-    df.index = df.index.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    if pd.api.types.is_integer_dtype(df.index):
+        ts = pd.to_datetime(df.index, unit="ns", utc=True)
+    else:
+        ts = pd.to_datetime(df.index, utc=True, format="mixed")
+    df.index = ts.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
     df.index.name = "timestamp"
     df = df.reset_index()
 
